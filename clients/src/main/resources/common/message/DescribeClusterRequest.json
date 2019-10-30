@@ -1,0 +1,8 @@
+{
+  "apiKey": 48,
+  "type": "request",
+  "name": "DescribeClusterRequest",
+  "validVersions": "0",
+  "fields": [
+    ]
+}

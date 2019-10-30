@@ -153,6 +153,7 @@ class KafkaServer(val config: KafkaConfig, time: Time = Time.SYSTEM, threadNameP
 
   private var _clusterId: String = null
   private var _brokerTopicStats: BrokerTopicStats = null
+  var versionInfo = new VersionInfo
 
 
   def clusterId: String = _clusterId
@@ -245,6 +246,7 @@ class KafkaServer(val config: KafkaConfig, time: Time = Time.SYSTEM, threadNameP
         notifyClusterListeners(kafkaMetricsReporters ++ metrics.reporters.asScala)
 
         logDirFailureChannel = new LogDirFailureChannel(config.logDirs.size)
+        versionInfo = new VersionInfo
 
         /* start log manager */
         logManager = LogManager(config, initialOfflineDirs, zkClient, brokerState, kafkaScheduler, time, brokerTopicStats, logDirFailureChannel)
