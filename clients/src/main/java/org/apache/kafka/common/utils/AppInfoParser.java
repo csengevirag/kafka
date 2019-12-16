@@ -64,6 +64,9 @@ public class AppInfoParser {
             ManagementFactory.getPlatformMBeanServer().registerMBean(mBean, name);
 
             registerMetrics(metrics, mBean); // prefix will be added later by JmxReporter
+            ObjectName pascalCaseName = new ObjectName(prefix + ":type=AppInfo,id=" + Sanitizer.jmxSanitize(id));
+            AppInfo pascalCaseMBean = new AppInfo(nowMs);
+            ManagementFactory.getPlatformMBeanServer().registerMBean(pascalCaseMBean, pascalCaseName);
         } catch (JMException e) {
             log.warn("Error registering AppInfo mbean", e);
         }
@@ -75,6 +78,9 @@ public class AppInfoParser {
             ObjectName name = new ObjectName(prefix + ":type=app-info,id=" + Sanitizer.jmxSanitize(id));
             if (server.isRegistered(name))
                 server.unregisterMBean(name);
+            ObjectName pascalCaseName = new ObjectName(prefix + ":type=AppInfo,id=" + Sanitizer.jmxSanitize(id));
+            if (server.isRegistered(pascalCaseName))
+                server.unregisterMBean(pascalCaseName);
 
             unregisterMetrics(metrics);
         } catch (JMException e) {

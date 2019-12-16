@@ -1038,4 +1038,27 @@ public final class Utils {
             )
         );
     }
+
+    public static String capitalize(String name) {
+        if (name.length() > 0)
+            return name.substring(0, 1).toUpperCase(Locale.getDefault()).concat(name.substring(1));
+        else return name;
+    }
+
+    public static boolean isKebabCase(String name) {
+        return name.matches("^([a-z]|-)*$");
+    }
+
+    public static String fromKebabCaseToPascalCase(String metricName) {
+        if (!isKebabCase(metricName)) {
+            return metricName;
+        } else {
+            String[] words = metricName.split("-");
+            StringBuilder pascalCaseName = new StringBuilder();
+            for (String s : words) {
+                pascalCaseName.append(capitalize(s));
+            }
+            return pascalCaseName.toString();
+        }
+    }
 }

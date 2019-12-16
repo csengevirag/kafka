@@ -20,6 +20,8 @@ import java.lang.management.ManagementFactory;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.TreeMap;
+import java.util.Collections;
 
 import javax.management.Attribute;
 import javax.management.AttributeList;
@@ -38,8 +40,12 @@ import javax.management.ReflectionException;
 import org.apache.kafka.common.KafkaException;
 import org.apache.kafka.common.MetricName;
 import org.apache.kafka.common.utils.Sanitizer;
+import org.apache.kafka.common.utils.Utils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
+import static org.apache.kafka.common.utils.Utils.isKebabCase;
+import static org.apache.kafka.common.utils.Utils.fromKebabCaseToPascalCase;
 
 /**
  * Register metrics in JMX as dynamic mbeans based on the metric names
@@ -50,6 +56,7 @@ public class JmxReporter implements MetricsReporter {
     private static final Object LOCK = new Object();
     private String prefix;
     private final Map<String, KafkaMbean> mbeans = new HashMap<String, KafkaMbean>();
+    private final Map<MetricName, MetricName> alterNames = new HashMap<MetricName, MetricName>();
 
     public JmxReporter() {
         this("");
@@ -63,13 +70,18 @@ public class JmxReporter implements MetricsReporter {
     }
 
     @Override
-    public void configure(Map<String, ?> configs) {}
+    public void configure(Map<String, ?> configs) {
+    }
 
     @Override
     public void init(List<KafkaMetric> metrics) {
         synchronized (LOCK) {
-            for (KafkaMetric metric : metrics)
-                addAttribute(metric);
+            for (KafkaMetric metric : metrics) {
+                addAttribute(metric, metric.metricName());
+                if (isKebabCaseMetricName(metric)) {
+                    addPascalCaseAttribute(metric, metric.metricName());
+                }
+            }
             for (KafkaMbean mbean : mbeans.values())
                 reregister(mbean);
         }
@@ -82,8 +94,12 @@ public class JmxReporter implements MetricsReporter {
     @Override
     public void metricChange(KafkaMetric metric) {
         synchronized (LOCK) {
-            KafkaMbean mbean = addAttribute(metric);
+            KafkaMbean mbean = addAttribute(metric, metric.metricName());
             reregister(mbean);
+            if (isKebabCaseMetricName(metric)) {
+                KafkaMbean pascalCaseMBean = addPascalCaseAttribute(metric, metric.metricName());
+                reregister(pascalCaseMBean);
+            }
         }
     }
 
@@ -92,28 +108,61 @@ public class JmxReporter implements MetricsReporter {
         synchronized (LOCK) {
             MetricName metricName = metric.metricName();
             String mBeanName = getMBeanName(prefix, metricName);
-            KafkaMbean mbean = removeAttribute(metric, mBeanName);
-            if (mbean != null) {
-                if (mbean.metrics.isEmpty()) {
-                    unregister(mbean);
-                    mbeans.remove(mBeanName);
-                } else
-                    reregister(mbean);
+            KafkaMbean mbean = removeAttribute(metricName, mBeanName);
+            removeMBean(mbean, mBeanName);
+            if (alterNames.containsKey(metricName)) {
+                MetricName pascalCaseMetricName = alterNames.get(metricName);
+                String pascalCaseMBeanName = getMBeanName(prefix, pascalCaseMetricName);
+                KafkaMbean pascalCaseMbean = removeAttribute(pascalCaseMetricName, pascalCaseMBeanName);
+                removeMBean(pascalCaseMbean, pascalCaseMBeanName);
             }
         }
     }
 
-    private KafkaMbean removeAttribute(KafkaMetric metric, String mBeanName) {
-        MetricName metricName = metric.metricName();
+    private void removeMBean(KafkaMbean mbean, String mBeanName) {
+        if (mbean != null) {
+            if (mbean.metrics.isEmpty()) {
+                unregister(mbean);
+                mbeans.remove(mBeanName);
+            } else
+                reregister(mbean);
+        }
+    }
+
+    private boolean isKebabCaseMetricName(KafkaMetric metric) {
+        boolean tags = false;
+        for (Map.Entry<String, String> entry : metric.metricName().tags().entrySet()) {
+            if (isKebabCase(entry.getValue())) {
+                tags = true;
+            }
+        }
+        return tags
+                || Utils.isKebabCase(metric.metricName().name())
+                || Utils.isKebabCase(metric.metricName().group());
+    }
+
+    private Map<String, String> transformTags(Map<String, String> tags) {
+        Map<String, String> pascalCaseTags = new TreeMap<>();
+        for (Map.Entry<String, String> entry : tags.entrySet()) {
+            if (entry.getKey().length() <= 0 || entry.getValue().length() <= 0)
+                pascalCaseTags = Collections.emptyMap();
+            else if (!(entry.getKey().equals("topic")) && Utils.isKebabCase(entry.getValue()))
+                pascalCaseTags.put(entry.getKey(), fromKebabCaseToPascalCase(entry.getValue()));
+            else
+                pascalCaseTags.put(entry.getKey(), entry.getValue());
+        }
+        return pascalCaseTags;
+    }
+
+    private KafkaMbean removeAttribute(MetricName metricName, String mBeanName) {
         KafkaMbean mbean = this.mbeans.get(mBeanName);
         if (mbean != null)
             mbean.removeAttribute(metricName.name());
         return mbean;
     }
 
-    private KafkaMbean addAttribute(KafkaMetric metric) {
+    private KafkaMbean addAttribute(KafkaMetric metric, MetricName metricName) {
         try {
-            MetricName metricName = metric.metricName();
             String mBeanName = getMBeanName(prefix, metricName);
             if (!this.mbeans.containsKey(mBeanName))
                 mbeans.put(mBeanName, new KafkaMbean(mBeanName));
@@ -121,8 +170,20 @@ public class JmxReporter implements MetricsReporter {
             mbean.setAttribute(metricName.name(), metric);
             return mbean;
         } catch (JMException e) {
-            throw new KafkaException("Error creating mbean attribute for metricName :" + metric.metricName(), e);
+            throw new KafkaException("Error creating mbean attribute for metricName :" + metricName, e);
         }
+    }
+
+    private KafkaMbean addPascalCaseAttribute(KafkaMetric metric, MetricName metricName) {
+        String name = fromKebabCaseToPascalCase(metricName.name());
+        String group = fromKebabCaseToPascalCase(metricName.group());
+        Map<String, String> tags = metricName.tags();
+        Map<String, String> pascalCaseTags = transformTags(tags);
+        MetricName pascalCaseMetricName = new MetricName(name, group, metricName.description(), pascalCaseTags);
+        KafkaMbean pascalCaseMBean = addAttribute(metric, pascalCaseMetricName);
+        MetricName originalMetricName = new MetricName(metricName.name(), metricName.group(), metricName.description(), metricName.tags());
+        alterNames.put(originalMetricName, pascalCaseMetricName);
+        return pascalCaseMBean;
     }
 
     /**
