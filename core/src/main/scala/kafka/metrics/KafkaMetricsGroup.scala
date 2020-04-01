@@ -44,16 +44,6 @@ trait KafkaMetricsGroup extends Logging {
 
   var alterNames: mutable.Map[MetricName, MetricName] = collection.mutable.Map.empty
 
-  private def kebabCaseToPascalCase(name: String): String ={
-    val metricNames: Array[String] = name.split("-")
-    val nameBuilder: StringBuilder = new StringBuilder
-    for(metricName <- metricNames ){
-      val cap = metricName.capitalize
-      nameBuilder.append(cap)
-    }
-    nameBuilder.toString()
-  }
-
   private def isKebabCaseMetricName(name: String, tags: scala.collection.Map[String, String]): Boolean = {
     var tag: Boolean = false
     for ((key, value) <- tags) {
@@ -89,10 +79,10 @@ trait KafkaMetricsGroup extends Logging {
   private def createPascalCaseMetricName(name: String, tags: Map[String, String]): MetricName = {
     val kebabCaseMetricName: MetricName = metricName(name, tags)
     if (isKebabCaseMetricName(name, tags)) {
-      val pascalCaseName: String = kebabCaseToPascalCase(name)
+      val pascalCaseName: String = Utils.fromKebabCaseToPascalCase(name)
       val pascalCaseTags: Map[String, String] = tags.map { case (tagKey, tagValue) => {
         if (Utils.isKebabCase(tagValue) && !tagKey.equals("topic")) {
-          tagKey -> kebabCaseToPascalCase(tagValue)
+          tagKey -> Utils.fromKebabCaseToPascalCase(tagValue)
         } else {
           (tagKey, tagValue)
         }
@@ -106,28 +96,28 @@ trait KafkaMetricsGroup extends Logging {
   }
 
   def newGauge[T](name: String, metric: Gauge[T], tags: scala.collection.Map[String, String] = Map.empty) = {
-    if (createPascalCaseMetricName(name, tags)!=null) {
+    if (isKebabCaseMetricName(name, tags)) {
       Metrics.defaultRegistry().newGauge(createPascalCaseMetricName(name, tags), metric)
     }
     Metrics.defaultRegistry().newGauge(metricName(name, tags), metric)
   }
 
   def newMeter(name: String, eventType: String, timeUnit: TimeUnit, tags: scala.collection.Map[String, String] = Map.empty) = {
-    if (createPascalCaseMetricName(name, tags)!=null) {
+    if (isKebabCaseMetricName(name, tags)) {
       Metrics.defaultRegistry().newMeter(createPascalCaseMetricName(name, tags), eventType, timeUnit)
     }
     Metrics.defaultRegistry().newMeter(metricName(name, tags), eventType, timeUnit)
   }
 
   def newHistogram(name: String, biased: Boolean = true, tags: scala.collection.Map[String, String] = Map.empty) = {
-    if (createPascalCaseMetricName(name, tags)!=null) {
+    if (isKebabCaseMetricName(name, tags)) {
       Metrics.defaultRegistry().newHistogram(createPascalCaseMetricName(name, tags), biased)
     }
     Metrics.defaultRegistry().newHistogram(metricName(name, tags), biased)
   }
 
   def newTimer(name: String, durationUnit: TimeUnit, rateUnit: TimeUnit, tags: scala.collection.Map[String, String] = Map.empty) = {
-    if (createPascalCaseMetricName(name, tags)!=null) {
+    if (isKebabCaseMetricName(name, tags)) {
       Metrics.defaultRegistry().newTimer(createPascalCaseMetricName(name, tags), durationUnit, rateUnit)
     }
     Metrics.defaultRegistry().newTimer(metricName(name, tags), durationUnit, rateUnit)

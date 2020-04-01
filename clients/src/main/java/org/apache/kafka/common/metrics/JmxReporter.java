@@ -21,7 +21,6 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.TreeMap;
-import java.util.Collections;
 
 import javax.management.Attribute;
 import javax.management.AttributeList;
@@ -44,7 +43,6 @@ import org.apache.kafka.common.utils.Utils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import static org.apache.kafka.common.utils.Utils.isKebabCase;
 import static org.apache.kafka.common.utils.Utils.fromKebabCaseToPascalCase;
 
 /**
@@ -78,8 +76,9 @@ public class JmxReporter implements MetricsReporter {
         synchronized (LOCK) {
             for (KafkaMetric metric : metrics) {
                 addAttribute(metric, metric.metricName());
-                if (isKebabCaseMetricName(metric)) {
-                    addPascalCaseAttribute(metric, metric.metricName());
+                if (isKebabCaseMetricName(metric.metricName())) {
+                    MetricName pascalCaseMetricName = new MetricName(fromKebabCaseToPascalCase(metric.metricName().name()), fromKebabCaseToPascalCase(metric.metricName().group()), metric.metricName().description(), transformTags(metric.metricName().tags()));
+                    addAttribute(metric, pascalCaseMetricName);
                 }
             }
             for (KafkaMbean mbean : mbeans.values())
@@ -96,8 +95,9 @@ public class JmxReporter implements MetricsReporter {
         synchronized (LOCK) {
             KafkaMbean mbean = addAttribute(metric, metric.metricName());
             reregister(mbean);
-            if (isKebabCaseMetricName(metric)) {
-                KafkaMbean pascalCaseMBean = addPascalCaseAttribute(metric, metric.metricName());
+            if (isKebabCaseMetricName(metric.metricName())) {
+                MetricName pascalCaseMetricName = new MetricName(fromKebabCaseToPascalCase(metric.metricName().name()), fromKebabCaseToPascalCase(metric.metricName().group()), metric.metricName().description(), transformTags(metric.metricName().tags()));
+                KafkaMbean pascalCaseMBean = addAttribute(metric, pascalCaseMetricName);
                 reregister(pascalCaseMBean);
             }
         }
@@ -106,20 +106,17 @@ public class JmxReporter implements MetricsReporter {
     @Override
     public void metricRemoval(KafkaMetric metric) {
         synchronized (LOCK) {
-            MetricName metricName = metric.metricName();
-            String mBeanName = getMBeanName(prefix, metricName);
-            KafkaMbean mbean = removeAttribute(metricName, mBeanName);
-            removeMBean(mbean, mBeanName);
-            if (alterNames.containsKey(metricName)) {
-                MetricName pascalCaseMetricName = alterNames.get(metricName);
-                String pascalCaseMBeanName = getMBeanName(prefix, pascalCaseMetricName);
-                KafkaMbean pascalCaseMbean = removeAttribute(pascalCaseMetricName, pascalCaseMBeanName);
-                removeMBean(pascalCaseMbean, pascalCaseMBeanName);
+            removeMBean(metric.metricName());
+            if (isKebabCaseMetricName(metric.metricName())) {
+                MetricName pascalCaseMetricName = new MetricName(fromKebabCaseToPascalCase(metric.metricName().name()), fromKebabCaseToPascalCase(metric.metricName().group()), metric.metricName().description(), transformTags(metric.metricName().tags()));
+                removeMBean(pascalCaseMetricName);
             }
         }
     }
-
-    private void removeMBean(KafkaMbean mbean, String mBeanName) {
+    
+    private void removeMBean(MetricName metricName) {
+        String mBeanName = getMBeanName(prefix, metricName);
+        KafkaMbean mbean = removeAttribute(metricName, mBeanName);
         if (mbean != null) {
             if (mbean.metrics.isEmpty()) {
                 unregister(mbean);
@@ -129,24 +126,15 @@ public class JmxReporter implements MetricsReporter {
         }
     }
 
-    private boolean isKebabCaseMetricName(KafkaMetric metric) {
-        boolean tags = false;
-        for (Map.Entry<String, String> entry : metric.metricName().tags().entrySet()) {
-            if (isKebabCase(entry.getValue())) {
-                tags = true;
-            }
-        }
-        return tags
-                || Utils.isKebabCase(metric.metricName().name())
-                || Utils.isKebabCase(metric.metricName().group());
+    private boolean isKebabCaseMetricName(MetricName metricName) {
+        return Utils.isKebabCase(metricName.name()) || Utils.isKebabCase(metricName.group())
+                || metricName.tags().entrySet().stream().anyMatch(e -> Utils.isKebabCase(e.getValue()));
     }
 
     private Map<String, String> transformTags(Map<String, String> tags) {
         Map<String, String> pascalCaseTags = new TreeMap<>();
         for (Map.Entry<String, String> entry : tags.entrySet()) {
-            if (entry.getKey().length() <= 0 || entry.getValue().length() <= 0)
-                pascalCaseTags = Collections.emptyMap();
-            else if (!(entry.getKey().equals("topic")) && Utils.isKebabCase(entry.getValue()))
+            if (!(entry.getKey().equals("topic")) && Utils.isKebabCase(entry.getValue()))
                 pascalCaseTags.put(entry.getKey(), fromKebabCaseToPascalCase(entry.getValue()));
             else
                 pascalCaseTags.put(entry.getKey(), entry.getValue());
@@ -174,7 +162,7 @@ public class JmxReporter implements MetricsReporter {
         }
     }
 
-    private KafkaMbean addPascalCaseAttribute(KafkaMetric metric, MetricName metricName) {
+    /*private KafkaMbean addPascalCaseAttribute(KafkaMetric metric, MetricName metricName) {
         String name = fromKebabCaseToPascalCase(metricName.name());
         String group = fromKebabCaseToPascalCase(metricName.group());
         Map<String, String> tags = metricName.tags();
@@ -184,7 +172,7 @@ public class JmxReporter implements MetricsReporter {
         MetricName originalMetricName = new MetricName(metricName.name(), metricName.group(), metricName.description(), metricName.tags());
         alterNames.put(originalMetricName, pascalCaseMetricName);
         return pascalCaseMBean;
-    }
+    }*/
 
     /**
      * @param metricName

@@ -48,18 +48,6 @@ public class JmxReporterTest {
             sensor.add(metrics.metricName("pack.bean1.avg", "grp1"), new Avg());
             sensor.add(metrics.metricName("pack.bean2.total", "grp2"), new CumulativeSum());
 
-            sensor.add(metrics.metricName("kebab-case-metric-name", "kebab-case-group"), new CumulativeSum());
-            sensor.add(metrics.metricName("another-kebab-case-metricname", "PascalCaseKindOfGroup"), new CumulativeSum());
-            sensor.add(metrics.metricName("PascalCaseMetricName", "another-kebab-case-groupname"), new Value());
-            Map<String, String> tags = new HashMap<>();
-            Map<String, String> pascalCaseTags = new HashMap<>();
-            tags.put("tag1", "kebab-case-tag-name");
-            pascalCaseTags.put("tag1", "KebabCaseTagName");
-            tags.put("tag2", "PascalCaseTag");
-            pascalCaseTags.put("tag2", "PascalCaseTag");
-            sensor.add(metrics.metricName("NiceName", "not-nice-group", tags), new CumulativeSum());
-
-
             assertTrue(server.isRegistered(new ObjectName(":type=grp1")));
             assertEquals(Double.NaN, server.getAttribute(new ObjectName(":type=grp1"), "pack.bean1.avg"));
             assertTrue(server.isRegistered(new ObjectName(":type=grp2")));
@@ -74,6 +62,38 @@ public class JmxReporterTest {
             assertFalse(server.isRegistered(new ObjectName(":type=grp1")));
             assertTrue(server.isRegistered(new ObjectName(":type=grp2")));
             assertEquals(0.0, server.getAttribute(new ObjectName(":type=grp2"), "pack.bean2.total"));
+
+            metricName = metrics.metricName("pack.bean2.total", "grp2");
+            metrics.removeMetric(metricName);
+            assertFalse(reporter.containsMbean(mBeanName));
+
+            assertFalse(server.isRegistered(new ObjectName(":type=grp1")));
+            assertFalse(server.isRegistered(new ObjectName(":type=grp2")));
+            
+        } finally {
+            metrics.close();
+        }
+    }
+    @Test
+    public void testJmxCreatingPascalCaseMetricNames() throws Exception {
+        Metrics metrics = new Metrics();
+        MBeanServer server = ManagementFactory.getPlatformMBeanServer();
+        try {
+            JmxReporter reporter = new JmxReporter();
+            metrics.addReporter(reporter);
+            Sensor sensor = metrics.sensor("kafka.requests");
+            
+            sensor.add(metrics.metricName("kebab-case-metric-name", "kebab-case-group"), new CumulativeSum());
+            sensor.add(metrics.metricName("another-kebab-case-metricname", "PascalCaseKindOfGroup"), new CumulativeSum());
+            sensor.add(metrics.metricName("PascalCaseMetricName", "another-kebab-case-groupname"), new Value());
+            Map<String, String> tags = new HashMap<>();
+            Map<String, String> pascalCaseTags = new HashMap<>();
+            tags.put("tag1", "kebab-case-tag-name");
+            pascalCaseTags.put("tag1", "KebabCaseTagName");
+            tags.put("tag2", "PascalCaseTag");
+            pascalCaseTags.put("tag2", "PascalCaseTag");
+            sensor.add(metrics.metricName("NiceName", "not-nice-group", tags), new CumulativeSum());
+
 
             assertTrue(server.isRegistered(new ObjectName(":type=kebab-case-group")));
             assertTrue(server.isRegistered(new ObjectName(":type=KebabCaseGroup")));
@@ -99,20 +119,15 @@ public class JmxReporterTest {
             assertTrue(reporter.containsMbean(niceMBeanName));
             metrics.removeMetric(kebabCaseMetricName);
             metrics.removeMetric(niceMetricName);
-            assertFalse(reporter.containsMbean(mBeanName));
+            assertFalse(reporter.containsMbean(kebabCaseMBeanName));
             assertFalse(reporter.containsMbean(kebabToPascalMBeanName));
             assertFalse(reporter.containsMbean(niceMBeanName));
             assertFalse(reporter.containsMbean(nicePascalCaseMBeanName));
 
-            metricName = metrics.metricName("pack.bean2.total", "grp2");
-            metrics.removeMetric(metricName);
-            assertFalse(reporter.containsMbean(mBeanName));
-
-            assertFalse(server.isRegistered(new ObjectName(":type=grp1")));
-            assertFalse(server.isRegistered(new ObjectName(":type=grp2")));
             assertFalse(server.isRegistered(new ObjectName(":type=kebab-case-group")));
             assertFalse(server.isRegistered(new ObjectName(":type=KebabCaseGroup")));
             assertFalse(server.isRegistered(new ObjectName(":type=nice-group")));
+
         } finally {
             metrics.close();
         }
